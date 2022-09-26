@@ -14,6 +14,7 @@ import {
 } from '@sanity/ui'
 import _ from 'lodash'
 import {faker} from '@faker-js/faker'
+import {CheckmarkCircleIcon, CircleIcon, DocumentsIcon} from '@sanity/icons'
 
 type Manifest = {
   [key: string]: {
@@ -63,11 +64,13 @@ export default function Faker() {
   const handleCheckbox = React.useCallback(
     (e: SyntheticEvent<HTMLInputElement>) => {
       const {name, value} = e.currentTarget
-      const [typeName, fieldName] = name.split(',')
-      const path = [typeName, 'fields', fieldName]
+      const [typeName, ...rest] = name.split(',')
+      const path = [typeName, 'fields', ...rest]
 
-      const currentValue = _.get(manifest, path, undefined)
-      const newManifest = currentValue ? _.omit(manifest, path) : _.set(manifest, path, value)
+      // Toggle-off the whole object if this is a checkbox
+      const toggleCurrent =
+        [...name.split(',')].pop() === 'type' && _.get(manifest, path, undefined)
+      const newManifest = toggleCurrent ? _.omit(manifest, path) : _.set(manifest, path, value)
 
       return setManifest({...newManifest})
     },
@@ -83,7 +86,7 @@ export default function Faker() {
         let doc = {_type: type}
 
         Object.keys(manifest[type].fields).forEach((field) => {
-          switch (manifest[type].fields[field]) {
+          switch (manifest[type].fields[field].type) {
             case 'string':
               doc = _.set(doc, field, faker.commerce.productName())
               break
@@ -92,6 +95,20 @@ export default function Faker() {
                 doc,
                 [field, 'current'],
                 faker.commerce.productName().toLowerCase().replace(' ', '-')
+              )
+              break
+            case 'number':
+              doc = _.set(
+                doc,
+                field,
+                parseInt(
+                  faker.commerce.price(
+                    manifest[type].fields[field]?.min,
+                    manifest[type].fields[field]?.max,
+                    0
+                  ),
+                  10
+                )
               )
               break
             default:
@@ -159,6 +176,7 @@ export default function Faker() {
             <Button
               text="Delete Existing"
               tone="critical"
+              icon={deleteExisting ? CheckmarkCircleIcon : CircleIcon}
               mode={deleteExisting ? `default` : `ghost`}
               onClick={() => setDeleteExisting(!deleteExisting)}
               disabled={Boolean(faking || Object.keys(manifest).length < 1)}
@@ -167,6 +185,7 @@ export default function Faker() {
             />
             <Button
               text="Fake it!"
+              icon={DocumentsIcon}
               tone="positive"
               onClick={handleGenerate}
               disabled={Boolean(faking || generateCount < 1)}
@@ -195,13 +214,28 @@ export default function Faker() {
                     ? type.fields.map((field) => (
                         <Flex key={field.name} align="center" gap={2}>
                           <Checkbox
-                            name={`${type.name},${field.name}`}
+                            name={`${type.name},${field.name},type`}
                             onChange={handleCheckbox}
                             checked={manifest?.[type.name]?.fields?.[field.name]}
                             value={field.type}
                           />
-                          <Text>{field.name}</Text>
+                          <Text>{field?.title ?? field.name}</Text>
                           <Code size={1}>{field.type}</Code>
+                          {field.type === `number` &&
+                          manifest?.[type.name]?.fields?.[field.name] ? (
+                            <>
+                              <TextInput
+                                name={`${type.name},${field.name},min`}
+                                onChange={handleCheckbox}
+                                placeholder="Min"
+                              />
+                              <TextInput
+                                name={`${type.name},${field.name},max`}
+                                onChange={handleCheckbox}
+                                placeholder="Max"
+                              />
+                            </>
+                          ) : null}
                         </Flex>
                       ))
                     : null}
