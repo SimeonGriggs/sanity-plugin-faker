@@ -1,5 +1,5 @@
 import React, {SyntheticEvent} from 'react'
-import {useClient, useSchema} from 'sanity'
+import {SanityDocumentLike, useClient, useSchema} from 'sanity'
 import {
   Stack,
   Button,
@@ -11,6 +11,7 @@ import {
   TextInput,
   useToast,
   Grid,
+  Box,
 } from '@sanity/ui'
 import _ from 'lodash'
 import {faker} from '@faker-js/faker'
@@ -63,27 +64,55 @@ export default function Faker() {
 
   const handleCheckbox = React.useCallback(
     (e: SyntheticEvent<HTMLInputElement>) => {
+      const newManifest = {...manifest}
       const {name, value} = e.currentTarget
       const [typeName, ...rest] = name.split(',')
       const path = [typeName, 'fields', ...rest]
 
       // Toggle-off the whole object if this is a checkbox
       const toggleCurrent =
-        [...name.split(',')].pop() === 'type' && _.get(manifest, path, undefined)
-      const newManifest = toggleCurrent ? _.omit(manifest, path) : _.set(manifest, path, value)
+        [...name.split(',')].pop() === 'type' && _.get(newManifest, path, undefined)
+      if (toggleCurrent) {
+        _.unset(newManifest, path.slice(0, -1))
 
-      return setManifest({...newManifest})
+        // Remove any now-empty types
+        Object.keys(newManifest).forEach((type) => {
+          // Empty `fields` key
+          if (!Object.keys(newManifest[type].fields).length) {
+            _.unset(newManifest, [type, `fields`])
+          }
+
+          // Empty type
+          if (!Object.keys(newManifest[type]).length) {
+            _.unset(newManifest, [type])
+          }
+        })
+      } else {
+        _.set(newManifest, path, value)
+      }
+
+      return setManifest(newManifest)
     },
     [manifest]
   )
 
   const handleGenerate = React.useCallback(async () => {
-    const transaction = client.transaction()
+    const data: {[key: string]: SanityDocumentLike[]} = {}
     setFaking(true)
 
+    // Create fake data stubs first, in case we need to create references
+    Object.keys(manifest).forEach((type) => {
+      data[type] = []
+
+      for (let index = 0; index < manifest[type].count; index++) {
+        data[type].push({_id: faker.datatype.uuid(), _type: type})
+      }
+    })
+
+    // Now fill those documents with fake data
     Object.keys(manifest).forEach((type) => {
       for (let index = 0; index < manifest[type].count; index++) {
-        let doc = {_type: type}
+        let doc = data[type][index]
 
         Object.keys(manifest[type].fields).forEach((field) => {
           switch (manifest[type].fields[field].type) {
@@ -103,26 +132,49 @@ export default function Faker() {
                 field,
                 parseInt(
                   faker.commerce.price(
-                    manifest[type].fields[field]?.min,
-                    manifest[type].fields[field]?.max,
+                    manifest[type].fields[field]?.min ?? undefined,
+                    manifest[type].fields[field]?.max ?? undefined,
                     0
                   ),
                   10
                 )
               )
               break
+            case 'reference':
+              {
+                // Get random document of the referenced type
+                const referenceTypes: string[] = Object.keys(manifest[type].fields[field]?.to)
+
+                // Pick a random type
+                const targetType = _.sample(referenceTypes)
+
+                // Pick a random document of that type
+                const targetDoc = targetType ? _.sample(data[targetType]) : null
+
+                if (targetDoc) {
+                  doc = _.set(doc, field, {
+                    _type: 'reference',
+                    _ref: targetDoc._id,
+                  })
+                }
+              }
+              break
             default:
               break
           }
         })
 
-        transaction.create(doc)
+        data[type][index] = doc
       }
     })
 
+    // Delete existing documents
     if (deleteExisting) {
       await client.delete({query: `*[_type in $types]`, params: {types: Object.keys(manifest)}})
     }
+
+    const transaction = client.transaction()
+    Object.keys(data).forEach((type) => data[type].forEach((doc) => transaction.create(doc)))
 
     transaction
       .commit()
@@ -200,12 +252,19 @@ export default function Faker() {
           .map((type) => (
             <Card key={type.name} padding={4} tone="primary" border radius={2}>
               <Stack space={3}>
-                <Text weight="medium">{type?.title ?? type.name}</Text>
-                <TextInput
-                  name={type.name}
-                  onChange={handleUpdateCount}
-                  placeholder="Count of new documents to create"
-                />
+                <Flex align="center" gap={2}>
+                  <Text>Create</Text>
+                  <TextInput
+                    style={{width: 100}}
+                    name={type.name}
+                    onChange={handleUpdateCount}
+                    placeholder="Count"
+                  />
+                  <Box flex={1}>
+                    <Text weight="medium">{type?.title ?? type.name} Document(s)</Text>
+                  </Box>
+                </Flex>
+
                 <Text muted size={1}>
                   Fields:
                 </Text>
@@ -235,6 +294,24 @@ export default function Faker() {
                                 placeholder="Max"
                               />
                             </>
+                          ) : null}
+                          {field.type === `reference` &&
+                          manifest?.[type.name]?.fields?.[field.name] ? (
+                            <Flex align="center" gap={2}>
+                              {field.to.map((refTo: {type: string}) => (
+                                <>
+                                  <Checkbox
+                                    key={refTo.type}
+                                    onChange={handleCheckbox}
+                                    checked={
+                                      manifest?.[type.name]?.fields?.[field.name]?.to?.[refTo.type]
+                                    }
+                                    name={`${type.name},${field.name},to,${refTo.type}`}
+                                  />
+                                  <Text>{refTo.type}</Text>
+                                </>
+                              ))}
+                            </Flex>
                           ) : null}
                         </Flex>
                       ))
