@@ -5,6 +5,7 @@ import _ from 'lodash'
 import {faker} from '@faker-js/faker'
 import {CheckmarkCircleIcon, CircleIcon, DocumentsIcon} from '@sanity/icons'
 import Field from './Field'
+import {generateFakeImage} from '../generators/image'
 
 type Manifest = {
   [key: string]: {
@@ -115,6 +116,12 @@ export default function Faker() {
   const handleGenerate = React.useCallback(async () => {
     const data: {[key: string]: SanityDocumentLike[]} = {}
     setFaking(true)
+    toast.push({
+      closable: true,
+      status: 'info',
+      title: 'Generating fake data',
+      description: 'This may take a while...',
+    })
 
     // Create fake data stubs first, in case we need to create references
     Object.keys(manifest).forEach((type) => {
@@ -126,12 +133,20 @@ export default function Faker() {
     })
 
     // Now fill those documents with fake data
-    Object.keys(manifest).forEach((type) => {
+    for await (const type of Object.keys(manifest)) {
       for (let index = 0; index < manifest[type].count; index++) {
         let doc = data[type][index]
 
-        Object.keys(manifest[type].fields).forEach((field) => {
+        // For loop for async-ness
+        for await (const field of Object.keys(manifest[type].fields)) {
           switch (manifest[type].fields[field].type) {
+            case 'image':
+              {
+                const imageField = await generateFakeImage({client})
+
+                doc = _.set(doc, field, imageField)
+              }
+              break
             case 'string':
               doc = _.set(doc, field, faker.commerce.productName())
               break
@@ -159,7 +174,9 @@ export default function Faker() {
             case 'reference':
               {
                 // Get random document of the referenced type
-                const referenceTypes: string[] = Object.keys(manifest[type].fields[field]?.to)
+                const referenceTypes: string[] = manifest[type].fields[field]?.to
+                  ? Object.keys(manifest[type].fields[field]?.to)
+                  : []
 
                 // Pick a random type
                 const targetType = _.sample(referenceTypes)
@@ -198,6 +215,7 @@ export default function Faker() {
                     if (newItem._type === `block`) {
                       newItem = {
                         ...newItem,
+                        // @ts-ignore
                         style: 'normal',
                         markDefs: [],
                         children: [
@@ -208,6 +226,11 @@ export default function Faker() {
                             marks: [],
                           },
                         ],
+                      }
+                    } else if (newItem._type === `image`) {
+                      newItem = {
+                        ...newItem,
+                        ...(await generateFakeImage({client})),
                       }
                     }
 
@@ -221,11 +244,11 @@ export default function Faker() {
             default:
               break
           }
-        })
+        }
 
         data[type][index] = doc
       }
-    })
+    }
 
     // Delete existing documents
     if (deleteExisting) {
