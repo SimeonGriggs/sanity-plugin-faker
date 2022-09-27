@@ -2,6 +2,8 @@
 
 Generate massive amounts of fake structured content.
 
+![screenshot of sanity-plugin-faker in Sanity Studio v3](./img/screenshot.png)
+
 This plugin is a Studio v3 Exclusive proof-of-concept to look at your Studio's schema and use [Faker](https://fakerjs.dev/) to generate strings, numbers, array items and images.
 
 It has its limitations. It is destructive. **It will delete all documents of the type it is about to create** if "Delete Existing" is selected. It is not recommended or officially supported.
