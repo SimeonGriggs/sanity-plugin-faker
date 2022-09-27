@@ -56,13 +56,36 @@ export default function Faker() {
       const newManifest = {...manifest}
       const {name, value} = e.currentTarget
       const [typeName, ...rest] = name.split(',')
+      const lastKey = [...name.split(',')].pop()
       const path = [typeName, 'fields', ...rest]
 
       // Toggle-off the whole object if this is a checkbox
-      const toggleCurrent =
-        [...name.split(',')].pop() === 'type' && _.get(newManifest, path, undefined)
-      if (toggleCurrent) {
-        _.unset(newManifest, path.slice(0, -1))
+      const currentValueToToggle =
+        (lastKey === 'type' || lastKey === 'types') && _.get(newManifest, path, undefined)
+
+      // Key already has a value
+      if (currentValueToToggle) {
+        if (lastKey === `types`) {
+          if (currentValueToToggle.includes(value)) {
+            // Remove just this item in the array
+            _.set(
+              newManifest,
+              path,
+              currentValueToToggle.filter((v: string) => v !== value)
+            )
+          } else {
+            // Add new item to the array
+            _.set(newManifest, path, [...currentValueToToggle, value])
+          }
+
+          // Unset if array is now empty
+          if (_.get(newManifest, path, []).length === 0) {
+            _.unset(newManifest, path)
+          }
+        } else {
+          // Remove entirely
+          _.unset(newManifest, path.slice(0, -1))
+        }
 
         // Remove any now-empty types
         Object.keys(newManifest).forEach((type) => {
@@ -76,7 +99,11 @@ export default function Faker() {
             _.unset(newManifest, [type])
           }
         })
+      } else if (lastKey === `types`) {
+        // Set initial `types` array
+        _.set(newManifest, path, [value])
       } else {
+        // Set initial string value
         _.set(newManifest, path, value)
       }
 
@@ -148,6 +175,49 @@ export default function Faker() {
                 }
               }
               break
+            case 'array':
+              {
+                const items: any[] = []
+
+                if (manifest[type].fields[field]?.types?.length) {
+                  const itemsCount = parseInt(
+                    faker.commerce.price(
+                      manifest[type].fields[field]?.min ?? 1,
+                      manifest[type].fields[field]?.max ?? 3,
+                      0
+                    ),
+                    10
+                  )
+
+                  for (let itemsIndex = 0; itemsIndex < itemsCount; itemsIndex++) {
+                    let newItem = {
+                      _type: _.sample(manifest[type].fields[field]?.types),
+                      _key: faker.datatype.uuid().split(`-`)[0],
+                    }
+
+                    if (newItem._type === `block`) {
+                      newItem = {
+                        ...newItem,
+                        style: 'normal',
+                        markDefs: [],
+                        children: [
+                          {
+                            _type: 'span',
+                            _key: faker.datatype.uuid().split(`-`)[0],
+                            text: faker.lorem.paragraph(),
+                            marks: [],
+                          },
+                        ],
+                      }
+                    }
+
+                    items.push(newItem)
+                  }
+                }
+
+                doc = _.set(doc, field, items)
+              }
+              break
             default:
               break
           }
@@ -192,8 +262,6 @@ export default function Faker() {
     () => Object.keys(manifest).reduce((acc, type) => manifest?.[type]?.count ?? 0 + acc, 0),
     [manifest]
   )
-
-  console.log(documentTypes)
 
   return (
     <Grid gap={4} columns={2} padding={4}>
