@@ -1,21 +1,10 @@
 import React, {SyntheticEvent} from 'react'
 import {SanityDocumentLike, useClient, useSchema} from 'sanity'
-import {
-  Stack,
-  Button,
-  Card,
-  Flex,
-  Checkbox,
-  Text,
-  Code,
-  TextInput,
-  useToast,
-  Grid,
-  Box,
-} from '@sanity/ui'
+import {Stack, Button, Card, Flex, Text, TextInput, useToast, Grid, Box} from '@sanity/ui'
 import _ from 'lodash'
 import {faker} from '@faker-js/faker'
 import {CheckmarkCircleIcon, CircleIcon, DocumentsIcon} from '@sanity/icons'
+import Field from './Field'
 
 type Manifest = {
   [key: string]: {
@@ -200,7 +189,7 @@ export default function Faker() {
   }, [deleteExisting, client, manifest, toast])
 
   const generateCount = React.useMemo(
-    () => Object.keys(manifest).reduce((acc, type) => manifest?.[type]?.count + acc, 0),
+    () => Object.keys(manifest).reduce((acc, type) => manifest?.[type]?.count ?? 0 + acc, 0),
     [manifest]
   )
 
@@ -269,51 +258,17 @@ export default function Faker() {
                   Fields:
                 </Text>
                 <Stack space={2}>
+                  {/* @ts-ignore */}
                   {type.fields.length > 0
-                    ? type.fields.map((field) => (
-                        <Flex key={field.name} align="center" gap={2}>
-                          <Checkbox
-                            name={`${type.name},${field.name},type`}
-                            onChange={handleCheckbox}
-                            checked={manifest?.[type.name]?.fields?.[field.name]}
-                            value={field.type}
-                          />
-                          <Text>{field?.title ?? field.name}</Text>
-                          <Code size={1}>{field.type}</Code>
-                          {field.type === `number` &&
-                          manifest?.[type.name]?.fields?.[field.name] ? (
-                            <>
-                              <TextInput
-                                name={`${type.name},${field.name},min`}
-                                onChange={handleCheckbox}
-                                placeholder="Min"
-                              />
-                              <TextInput
-                                name={`${type.name},${field.name},max`}
-                                onChange={handleCheckbox}
-                                placeholder="Max"
-                              />
-                            </>
-                          ) : null}
-                          {field.type === `reference` &&
-                          manifest?.[type.name]?.fields?.[field.name] ? (
-                            <Flex align="center" gap={2}>
-                              {field.to.map((refTo: {type: string}) => (
-                                <>
-                                  <Checkbox
-                                    key={refTo.type}
-                                    onChange={handleCheckbox}
-                                    checked={
-                                      manifest?.[type.name]?.fields?.[field.name]?.to?.[refTo.type]
-                                    }
-                                    name={`${type.name},${field.name},to,${refTo.type}`}
-                                  />
-                                  <Text>{refTo.type}</Text>
-                                </>
-                              ))}
-                            </Flex>
-                          ) : null}
-                        </Flex>
+                    ? // @ts-ignore
+                      type.fields.map((field: any) => (
+                        <Field
+                          key={field.name}
+                          manifest={manifest}
+                          field={field}
+                          type={type}
+                          handleCheckbox={handleCheckbox}
+                        />
                       ))
                     : null}
                 </Stack>
